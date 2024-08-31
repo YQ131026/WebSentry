@@ -1,0 +1,5 @@
+colorama
+certifi
+requests
+schedule
+urllib3
