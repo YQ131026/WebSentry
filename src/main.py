@@ -2,6 +2,9 @@ import sys
 from pathlib import Path
 import signal
 import os
+from utils.ai_summarizer import summarize_results
+import json
+from config.config import EMAIL_CONFIG, AI_CONFIG
 
 # Add the project root directory to the Python path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -85,22 +88,50 @@ def create_html_table(results):
     table_html += "</table>"
     return table_html
 
+def check_config():
+    if 'enabled' not in EMAIL_CONFIG:
+        raise KeyError("EMAIL_CONFIG 中缺少 'enabled' 键")
+    if 'enabled' not in AI_CONFIG:
+        raise KeyError("AI_CONFIG 中缺少 'enabled' 键")
+
 def main():
-    create_log_directory()
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    logger.info("Starting website monitoring service")
     try:
+        check_config()  # 在主循环开始前检查配置
+        create_log_directory()
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        logger.info("Starting website monitoring service")
         while True:
             monitoring_results = monitor_websites()
             if monitoring_results:
+                # 创建 HTML 表格
                 html_table = create_html_table(monitoring_results)
-                send_alert_email(html_table)
+                
+                # 获取 AI 总结
+                results_json = json.dumps(monitoring_results, indent=2)
+                ai_summary = summarize_results(results_json)
+                
+                if ai_summary:
+                    logger.info(f"AI 总结结果:\n{ai_summary}")
+                    print(f"AI 总结结果:\n{ai_summary}")
+                else:
+                    logger.warning("未能获取 AI 总结")
+                
+                # 构建邮件内容
+                email_content = f"<h2>监控结果</h2>\n{html_table}\n\n"
+                if ai_summary:
+                    email_content += f"<h2>AI 总结</h2>\n<pre>{ai_summary}</pre>"
+                
+                # 发送报警邮件
+                send_alert_email(email_content)
+            
             time.sleep(MONITOR_FREQUENCY)
+    except KeyError as e:
+        logger.error(f"配置错误: {str(e)}")
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {str(e)}")
+        logger.error(f"发生意外错误: {str(e)}")
     finally:
-        logger.info("Website monitoring service stopped")
+        logger.info("网站监控服务已停止")
 
 if __name__ == "__main__":
     main()
